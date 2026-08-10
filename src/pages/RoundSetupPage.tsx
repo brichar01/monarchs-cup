@@ -1,13 +1,14 @@
 /**
  * Weekly attendance: tick who is playing (everyone starts ticked), sign up
- * new players inline (auto-ticked), then generate the round's teams.
+ * new players inline (auto-ticked), then generate the round's teams — with
+ * the number of teams either decided from attendance or overridden here.
  * The in-progress selection is kept in sessionStorage so it survives
  * navigating away and back; it is cleared once the round is generated.
  */
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useLeague } from "../store/league";
-import { decideTeamCount } from "../lib/generator";
+import { decideTeamCount, teamCountOptions } from "../lib/generator";
 import { clearAttendanceDraft, loadAttendanceDraft, saveAttendanceDraft } from "../lib/attendanceDraft";
 import PlayerForm from "../components/PlayerForm";
 
@@ -23,6 +24,7 @@ export default function RoundSetupPage() {
     const validIds = new Set(players.map((p) => p.id));
     return loadAttendanceDraft(validIds) ?? validIds;
   });
+  const [teamCountOverride, setTeamCountOverride] = useState<number | null>(null);
 
   useEffect(() => {
     saveAttendanceDraft(attending);
@@ -38,11 +40,14 @@ export default function RoundSetupPage() {
   };
 
   const count = attending.size;
-  const teamCount = decideTeamCount(count);
+  const options = teamCountOptions(count);
+  const autoTeamCount = decideTeamCount(count);
+  const teamCount = teamCountOverride && options.includes(teamCountOverride) ? teamCountOverride : autoTeamCount;
   const games = teamCount / 2;
+  const teamSize = count / teamCount;
 
   const generate = () => {
-    const roundId = generateRound([...attending]);
+    const roundId = generateRound([...attending], teamCount);
     clearAttendanceDraft();
     navigate(`/rounds/${roundId}`);
   };
@@ -82,12 +87,26 @@ export default function RoundSetupPage() {
       </section>
 
       <section className="rounded-lg bg-white p-4 shadow">
+        <label className="mb-3 flex flex-col text-sm font-medium sm:w-64">
+          Number of teams
+          <select
+            value={teamCountOverride ?? ""}
+            onChange={(e) => setTeamCountOverride(e.target.value ? Number(e.target.value) : null)}
+            className="mt-1 rounded border border-slate-300 bg-white px-2 py-1.5 font-normal"
+          >
+            <option value="">Auto ({autoTeamCount} teams)</option>
+            {options.map((n) => (
+              <option key={n} value={n}>
+                {n} teams · {n / 2} {n / 2 === 1 ? "game" : "games"}
+              </option>
+            ))}
+          </select>
+        </label>
         <p className="mb-3 text-sm text-slate-600">
           {count < MIN_ATTENDEES
             ? `At least ${MIN_ATTENDEES} attendees are needed to generate a round.`
-            : count < 10
-              ? `${count} attendees → 1 game with reduced teams of ${Math.floor(count / 2)}–${Math.ceil(count / 2)} (fewer than the usual 5-a-side minimum).`
-              : `${count} attendees → ${games} ${games === 1 ? "game" : "games"} (${teamCount} teams of 5–7).`}
+            : `${count} attendees → ${games} ${games === 1 ? "game" : "games"} (${teamCount} teams of ${Math.floor(teamSize)}–${Math.ceil(teamSize)})` +
+              (teamSize < 5 ? ", fewer than the usual 5-a-side minimum." : ".")}
         </p>
         <button
           onClick={generate}

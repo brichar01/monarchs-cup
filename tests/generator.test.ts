@@ -10,6 +10,7 @@ import {
   generateCandidate,
   mulberry32,
   selectBestRound,
+  teamCountOptions,
 } from "../src/lib/generator";
 import type { Gender, Player, Skill } from "../src/types";
 
@@ -34,6 +35,24 @@ describe("decideTeamCount", () => {
   it("falls back to a single game below 10 players", () => {
     expect(decideTeamCount(7)).toBe(2);
     expect(decideTeamCount(4)).toBe(2);
+  });
+});
+
+describe("teamCountOptions", () => {
+  it("offers every even count down to 4-a-side", () => {
+    expect(teamCountOptions(24)).toEqual([2, 4, 6]);
+    expect(teamCountOptions(18)).toEqual([2, 4]);
+  });
+
+  it("always offers a single game, even for tiny attendances", () => {
+    expect(teamCountOptions(5)).toEqual([2]);
+    expect(teamCountOptions(0)).toEqual([2]);
+  });
+
+  it("includes the count the generator would pick itself", () => {
+    for (const n of [10, 14, 20, 29, 30]) {
+      expect(teamCountOptions(n)).toContain(decideTeamCount(n));
+    }
   });
 });
 
@@ -106,6 +125,15 @@ describe("selectBestRound", () => {
     const a = selectBestRound(attendees, score, mulberry32(42), 50);
     const b = selectBestRound(attendees, score, mulberry32(42), 50);
     expect(a.map((t) => t.map((p) => p.id))).toEqual(b.map((t) => t.map((p) => p.id)));
+  });
+
+  it("honours an overridden team count", () => {
+    const attendees = [...makePlayers(4, "female"), ...makePlayers(14, "male", 3)];
+    const score = (p: Player) => p.skill;
+    const teams = selectBestRound(attendees, score, mulberry32(11), 50, 4);
+    expect(teams.length).toBe(4);
+    expect(teams.flat().length).toBe(attendees.length);
+    expect(decideTeamCount(attendees.length)).toBe(2);
   });
 
   it("never returns a candidate worse than a fresh sample", () => {

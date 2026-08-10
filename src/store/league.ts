@@ -5,7 +5,7 @@
  */
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
-import { SCHEMA_VERSION, type Gender, type Player, type Round, type ScoreSheet, type Skill, type Team } from "../types";
+import { SCHEMA_VERSION, type Game, type Gender, type Player, type Round, type ScoreSheet, type Skill, type Team } from "../types";
 import { mulberry32, selectBestRound } from "../lib/generator";
 import { computeStats } from "../lib/standings";
 
@@ -23,7 +23,8 @@ interface LeagueStore {
   updatePlayer: (id: string, input: PlayerInput) => void;
   removePlayer: (id: string) => void;
 
-  generateRound: (attendeeIds: string[]) => string;
+  generateRound: (attendeeIds: string[], teamCount?: number) => string;
+  rerollRound: (roundId: string, teamCount?: number) => void;
   movePlayer: (roundId: string, playerId: string, toTeamId: string) => void;
   addLatecomer: (roundId: string, playerId: string, teamId: string) => void;
   submitScoreSheet: (roundId: string, gameId: string, teamId: string, sheet: ScoreSheet) => void;
@@ -36,6 +37,32 @@ const uuid = () => crypto.randomUUID();
 
 function updateRound(rounds: Round[], roundId: string, update: (round: Round) => Round): Round[] {
   return rounds.map((r) => (r.id === roundId ? update(r) : r));
+}
+
+/**
+ * Runs the generator over the given attendees and wraps the result in fresh
+ * games. `teamCount` overrides the count the generator would pick itself.
+ */
+function buildGames(players: Player[], rounds: Round[], attendeeIds: string[], teamCount?: number): Game[] {
+  const attendees = players.filter((p) => attendeeIds.includes(p.id));
+  const stats = computeStats({ players, rounds });
+  const score = (p: Player) => {
+    const s = stats.get(p.id);
+    const wins = s?.wins ?? 0;
+    const roundsPlayed = s?.roundsParticipated ?? 0;
+    return wins + (roundsPlayed < 3 ? p.skill : 0);
+  };
+  const rng = mulberry32(Date.now() >>> 0);
+  const teams = selectBestRound(attendees, score, rng, 500, teamCount);
+
+  const games: Game[] = [];
+  for (let g = 0; g < teams.length; g += 2) {
+    const gameNumber = g / 2 + 1;
+    const teamA: Team = { id: uuid(), name: `Game ${gameNumber} — Team A`, playerIds: teams[g].map((p) => p.id) };
+    const teamB: Team = { id: uuid(), name: `Game ${gameNumber} — Team B`, playerIds: teams[g + 1].map((p) => p.id) };
+    games.push({ id: uuid(), teams: [teamA, teamB] as [Team, Team], scoreSheets: { [teamA.id]: null, [teamB.id]: null } });
+  }
+  return games;
 }
 
 export const useLeague = create<LeagueStore>()(
@@ -58,37 +85,27 @@ export const useLeague = create<LeagueStore>()(
       removePlayer: (id) =>
         set((state) => ({ players: state.players.filter((p) => p.id !== id) })),
 
-      generateRound: (attendeeIds) => {
+      generateRound: (attendeeIds, teamCount) => {
         const { players, rounds } = get();
-        const attendees = players.filter((p) => attendeeIds.includes(p.id));
-        const stats = computeStats({ players, rounds });
-        const score = (p: Player) => {
-          const s = stats.get(p.id);
-          const wins = s?.wins ?? 0;
-          const roundsPlayed = s?.roundsParticipated ?? 0;
-          return wins + (roundsPlayed < 3 ? p.skill : 0);
-        };
-        const rng = mulberry32(Date.now() >>> 0);
-        const teams = selectBestRound(attendees, score, rng);
-
-        const games = [];
-        for (let g = 0; g < teams.length; g += 2) {
-          const gameNumber = g / 2 + 1;
-          const teamA: Team = { id: uuid(), name: `Game ${gameNumber} — Team A`, playerIds: teams[g].map((p) => p.id) };
-          const teamB: Team = { id: uuid(), name: `Game ${gameNumber} — Team B`, playerIds: teams[g + 1].map((p) => p.id) };
-          games.push({ id: uuid(), teams: [teamA, teamB] as [Team, Team], scoreSheets: { [teamA.id]: null, [teamB.id]: null } });
-        }
-
         const round: Round = {
           id: uuid(),
           number: rounds.length + 1,
           date: new Date().toISOString().slice(0, 10),
           attendeeIds,
-          games,
+          games: buildGames(players, rounds, attendeeIds, teamCount),
           status: "generated",
         };
         set((state) => ({ rounds: [...state.rounds, round] }));
         return round.id;
+      },
+
+      rerollRound: (roundId, teamCount) => {
+        const { players, rounds } = get();
+        const round = rounds.find((r) => r.id === roundId);
+        if (!round || round.games.some((g) => g.teams.some((t) => g.scoreSheets[t.id] !== null))) return;
+        const others = rounds.filter((r) => r.id !== roundId);
+        const games = buildGames(players, others, round.attendeeIds, teamCount ?? round.games.length * 2);
+        set((state) => ({ rounds: updateRound(state.rounds, roundId, (r) => ({ ...r, games })) }));
       },
 
       movePlayer: (roundId, playerId, toTeamId) =>

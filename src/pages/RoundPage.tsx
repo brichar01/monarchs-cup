@@ -2,6 +2,8 @@
  * Round view: the round's games with editable team rosters, latecomer
  * additions, per-team score submission and game results. A game's rosters
  * lock as soon as either of its teams submits a score sheet.
+ * Until the round's first score sheet is submitted the whole round can be
+ * rerolled, either into fresh teams or into a different number of teams.
  * The open score-sheet modal (which game/team, plus its in-progress
  * scores/spirit/MVP picks) is kept in sessionStorage so it survives
  * navigating away and back; it is cleared once that sheet is submitted
@@ -11,6 +13,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useParams } from "react-router-dom";
 import { useLeague } from "../store/league";
 import { gameResult } from "../lib/standings";
+import { teamCountOptions } from "../lib/generator";
 import TeamCard from "../components/TeamCard";
 import ScoreSheetModal, { createScoreSheetDraft, type ScoreSheetDraft } from "../components/ScoreSheetModal";
 import PlayerForm from "../components/PlayerForm";
@@ -42,6 +45,7 @@ export default function RoundPage() {
   const addLatecomer = useLeague((s) => s.addLatecomer);
   const addPlayer = useLeague((s) => s.addPlayer);
   const submitScoreSheet = useLeague((s) => s.submitScoreSheet);
+  const rerollRound = useLeague((s) => s.rerollRound);
 
   const [scoreSheetFor, setScoreSheetFor] = useState<ScoreSheetOpen | null>(() =>
     roundId ? loadScoreSheetOpen(roundId) : null
@@ -68,6 +72,10 @@ export default function RoundPage() {
     .flatMap((g) => g.teams);
   const onTeams = new Set(allTeams.flatMap((t) => t.playerIds));
   const latecomerCandidates = players.filter((p) => !onTeams.has(p.id));
+
+  const teamCount = round.games.length * 2;
+  const rerollable = openTeams.length === allTeams.length;
+  const teamCountChoices = [...new Set([...teamCountOptions(onTeams.size), teamCount])].sort((a, b) => a - b);
 
   const addLatecomerToTeam = (playerId: string) => {
     const teamId = openTeams.some((t) => t.id === latecomerTeamId) ? latecomerTeamId : openTeams[0]?.id;
@@ -100,6 +108,37 @@ export default function RoundPage() {
           {round.status === "complete" ? "Complete" : "In progress"}
         </span>
       </div>
+
+      {rerollable && (
+        <section className="rounded-lg bg-white p-4 shadow">
+          <div className="flex flex-wrap items-end gap-3">
+            <label className="flex flex-col text-sm font-medium">
+              Number of teams
+              <select
+                value={teamCount}
+                onChange={(e) => rerollRound(round.id, Number(e.target.value))}
+                className="mt-1 rounded border border-slate-300 bg-white px-2 py-1.5 font-normal"
+              >
+                {teamCountChoices.map((n) => (
+                  <option key={n} value={n}>
+                    {n} teams · {n / 2} {n / 2 === 1 ? "game" : "games"}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <button
+              onClick={() => rerollRound(round.id)}
+              className="rounded bg-indigo-600 px-4 py-1.5 text-sm font-semibold text-white hover:bg-indigo-700"
+            >
+              Reroll teams
+            </button>
+          </div>
+          <p className="mt-2 text-xs text-slate-400">
+            Rerolling redraws every roster in this round, including any manual moves. Changing the number of teams
+            redraws them too. Both stop being available once a score sheet is submitted.
+          </p>
+        </section>
+      )}
 
       {round.games.map((game, index) => {
         const locked = game.teams.some((t) => game.scoreSheets[t.id] !== null);

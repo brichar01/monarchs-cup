@@ -32,6 +32,8 @@ export function shuffled<T>(items: T[], rng: Rng): T[] {
 
 const MIN_TEAM = 5;
 const MAX_TEAM = 7;
+/** Smallest team the organiser is allowed to force via a manual override. */
+const MIN_OVERRIDE_TEAM = 4;
 const SKILLS_DESC: Skill[] = [4, 3, 2, 1];
 
 /**
@@ -41,6 +43,16 @@ const SKILLS_DESC: Skill[] = [4, 3, 2, 1];
 export function decideTeamCount(attendeeCount: number): number {
   const t = Math.floor(attendeeCount / MIN_TEAM);
   return Math.max(t - (t % 2), 2);
+}
+
+/**
+ * Even team counts the organiser may pick manually — every count from a
+ * single game up to the most teams that still leaves 4 players each.
+ */
+export function teamCountOptions(attendeeCount: number): number[] {
+  const t = Math.floor(attendeeCount / MIN_OVERRIDE_TEAM);
+  const max = Math.max(t - (t % 2), 2);
+  return Array.from({ length: max / 2 }, (_, i) => (i + 1) * 2);
 }
 
 function pickSmallest(teams: Player[][], rng: Rng): Player[] {
@@ -99,9 +111,9 @@ export function selectBestRound(
   attendees: Player[],
   score: (p: Player) => number,
   rng: Rng,
-  iterations = 500
+  iterations = 500,
+  teamCount = decideTeamCount(attendees.length)
 ): Player[][] {
-  const teamCount = decideTeamCount(attendees.length);
   let best: Player[][][] = [];
   let bestBadness = Infinity;
   for (let k = 0; k < iterations; k++) {

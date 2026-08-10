@@ -43,6 +43,12 @@ try {
   const teamNames = await page.locator("h4").allTextContents();
   assert(teamNames.includes("Game 1 — Team A") && teamNames.includes("Game 1 — Team B"), "two teams generated");
 
+  // Reroll: every attendee is redrawn onto the same number of teams.
+  await page.getByRole("button", { name: "Reroll teams" }).click();
+  const rerolled = await page.locator("div.bg-slate-50 li span.font-medium").allTextContents();
+  assert(rerolled.length === 12, `reroll kept all 12 players (got ${rerolled.length})`);
+  assert((await page.locator("h4").count()) === 2, "reroll kept the round at 2 teams");
+
   const teamACard = page.locator('div.bg-slate-50:has(h4:text-is("Game 1 — Team A"))');
   const teamAPlayers = await teamACard.locator("li span.font-medium").allTextContents();
   assert(teamAPlayers.length === 6, `team A has 6 players (got ${teamAPlayers.length})`);
@@ -62,6 +68,10 @@ try {
   assert(await page.getByText("Score submitted: 13–10").isVisible(), "team A sheet recorded");
   assert(await page.getByText("Rosters locked").isVisible(), "game locked after first sheet");
   assert((await page.locator("li select").count()) === 0, "move dropdowns removed when locked");
+  assert(
+    (await page.getByRole("button", { name: "Reroll teams" }).count()) === 0,
+    "reroll withdrawn once a sheet is submitted"
+  );
 
   // Submit Team B's agreeing sheet: 10-13.
   await page.getByRole("button", { name: "Submit score" }).click();
