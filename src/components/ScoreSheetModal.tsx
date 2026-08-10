@@ -2,6 +2,8 @@
  * Score-sheet modal, modelled on the standard USAU/WFDF sheet: final scores,
  * the five spirit categories (0-4 dropdowns, awarded to the opposing team)
  * and two MVP votes for players on the opposing team.
+ * The same modal is reused to correct an already-submitted sheet (`editing`),
+ * seeded from the stored sheet with `scoreSheetDraftFrom`.
  */
 import type { Player, ScoreSheet, SpiritScores, Team } from "../types";
 import { SPIRIT_CATEGORIES, SPIRIT_RATINGS } from "../types";
@@ -26,11 +28,22 @@ export function createScoreSheetDraft(): ScoreSheetDraft {
   return { ownScore: 0, opponentScore: 0, spirit: DEFAULT_SPIRIT, mvp1: "", mvp2: "" };
 }
 
+export function scoreSheetDraftFrom(sheet: ScoreSheet): ScoreSheetDraft {
+  return {
+    ownScore: sheet.ownScore,
+    opponentScore: sheet.opponentScore,
+    spirit: sheet.spirit,
+    mvp1: sheet.mvpIds[0],
+    mvp2: sheet.mvpIds[1],
+  };
+}
+
 interface Props {
   team: Team;
   opponent: Team;
   playerById: Map<string, Player>;
   draft: ScoreSheetDraft;
+  editing?: boolean;
   onDraftChange: (draft: ScoreSheetDraft) => void;
   onSubmit: (sheet: ScoreSheet) => void;
   onClose: () => void;
@@ -39,7 +52,16 @@ interface Props {
 const MAX_SCORE = 30;
 const SCORE_OPTIONS = Array.from({ length: MAX_SCORE + 1 }, (_, i) => i);
 
-export default function ScoreSheetModal({ team, opponent, playerById, draft, onDraftChange, onSubmit, onClose }: Props) {
+export default function ScoreSheetModal({
+  team,
+  opponent,
+  playerById,
+  draft,
+  editing = false,
+  onDraftChange,
+  onSubmit,
+  onClose,
+}: Props) {
   const { ownScore, opponentScore, spirit, mvp1, mvp2 } = draft;
   const setOwnScore = (v: number) => onDraftChange({ ...draft, ownScore: v });
   const setOpponentScore = (v: number) => onDraftChange({ ...draft, opponentScore: v });
@@ -104,9 +126,12 @@ export default function ScoreSheetModal({ team, opponent, playerById, draft, onD
         className="max-h-full w-full max-w-lg overflow-y-auto rounded-lg bg-white p-5 shadow-xl"
         onClick={(e) => e.stopPropagation()}
       >
-        <h3 className="mb-1 text-lg font-semibold">Score sheet — {team.name}</h3>
+        <h3 className="mb-1 text-lg font-semibold">
+          {editing ? "Edit score sheet" : "Score sheet"} — {team.name}
+        </h3>
         <p className="mb-4 text-sm text-slate-500">
-          Spirit scores and MVP votes are awarded to {opponent.name}. Submitting locks both teams in this game.
+          Spirit scores and MVP votes are awarded to {opponent.name}.{" "}
+          {editing ? "Saving replaces the submitted sheet and updates the standings." : "Submitting locks both teams in this game."}
         </p>
 
         <div className="mb-4 grid grid-cols-2 gap-3">
@@ -150,7 +175,7 @@ export default function ScoreSheetModal({ team, opponent, playerById, draft, onD
             disabled={!valid}
             className="rounded bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-700 disabled:opacity-50"
           >
-            Submit score sheet
+            {editing ? "Save changes" : "Submit score sheet"}
           </button>
         </div>
       </div>
